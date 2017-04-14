@@ -1,2 +1,2 @@
-# acapallabot
-Acapella Extraction with Convolutional Neural Network
+# AcapellaBot
+Acapella Extraction with a Convolutional Neural Network
