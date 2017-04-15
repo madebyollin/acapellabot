@@ -8,16 +8,22 @@ Example usage:
 
 import conversion
 import argparse
+import random, string
 from data import Data
-import console
-from keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, UpSampling2D
+from keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, UpSampling2D, Concatenate, Conv2D, LeakyReLU, Dropout
 from keras.models import Model
 import os
 import numpy as np
+import console
 
 class AcapellaBot:
-    def __init__(self):
+    def __init__(self, regularization=0.2):
         # Create model
+        # pix2pix uses batchnorm before activations, but https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md suggests that having it after is actually better
+        # bias off on everything since I have batchnorm going
+         # Create model
+        # pix2pix uses batchnorm before activations, but https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md suggests that having it after is actually better
+        # bias off on everything since I have batchnorm going
         mashup = Input(shape=(None, None, 1), name='input')
         conv = Conv2D(64, 3, activation='relu', padding='same')(mashup)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
@@ -26,7 +32,7 @@ class AcapellaBot:
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = MaxPooling2D((2,2), padding='same')(conv)
-        conv = Conv2D(128, 3, activation='relu', padding='same')(conv)
+        conv = Conv2D(128, 3, activation='relu', padding='same', dilation_rate=1)(conv)
         conv = Conv2D(128, 3, activation='relu', padding='same')(conv)
         conv = UpSampling2D((2,2))(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
@@ -39,7 +45,7 @@ class AcapellaBot:
         conv = Conv2D(1, 3, activation='relu', padding='same')(conv)
         acapella = conv
         m = Model(inputs=mashup, outputs=acapella)
-        console.log("Model has", m.count_params(), "params")
+        console.log("Model has", m.count_params(),"params")
         m.compile(loss='mean_squared_error', optimizer='adam')
         self.model = m
 
@@ -49,7 +55,20 @@ class AcapellaBot:
         while epochs > 0:
             console.log("Training for ",epochs,"epochs on",len(xTrain),"examples")
             self.model.fit(xTrain, yTrain, batch_size=batch, epochs=epochs, validation_data=(xValid, yValid))
-            epochs = int(input("How many more epochs should we train for? "))
+            console.notify(str(epochs) + " Epochs Complete!", "Training on", data.inPath, "with size", batch)
+            while True:
+                try:
+                    epochs = int(input("How many more epochs should we train for? "))
+                    break
+                except ValueError:
+                    console.warn("Oops, number parse failed. Try again, I guess?")
+            if epochs > 0:
+                save = input("Should we save intermediate weights [y/n]? ")
+                if not save.lower().startswith("n"):
+                    weightPath = ''.join(random.choice(string.digits) for _ in range(16)) + ".h5"
+                    console.log("Saving intermediate weights to", weightPath)
+                    self.saveWeights(weightPath)
+
 
     def saveWeights(self, path):
         self.model.save_weights(path, overwrite=True)
@@ -58,7 +77,7 @@ class AcapellaBot:
     def isolateVocals(self, path, fftWindowSize, phaseIterations=10):
         console.log("Attempting to isolate vocals from ", path)
         audio, sampleRate = conversion.loadAudioFile(path)
-        spectrogram, phase = conversion.audioFileToSpectrogram(audio, fftWindowSize=fftWindowSize)
+        spectrogram, phase = conversion.audioFileToSpectrogram(audio, fftWindowSize=fftWindowSize, gridSnap=256)
         console.log("Retrieved spectrogram; processing with CNN")
         newSpectrogram = self.model.predict(spectrogram[np.newaxis,:,:,np.newaxis])[0]
         console.log("Processed spectrogram; reconverting to audio")
@@ -96,7 +115,7 @@ if __name__ == "__main__":
     if len(args.files) == 0 and args.data:
         console.log("No files provided; attempting to train on " + args.data + "...")
         if args.load:
-            console.h1("Loading weights")
+            console.h1("Loading Weights")
             acapellabot.loadWeights(args.weights)
         console.h1("Loading Data")
         data = Data(args.data, args.fft, args.split)
