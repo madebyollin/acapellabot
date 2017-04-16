@@ -8,52 +8,51 @@ from math import ceil
 import argparse
 import console
 
-# Loads an audio file and returns audio data, sample rate
 def loadAudioFile(filePath):
     audio, sampleRate = librosa.load(filePath)
     return audio, sampleRate
 
 def saveAudioFile(audioFile, filePath, sampleRate):
     librosa.output.write_wav(filePath, audioFile, sampleRate, norm=True)
-    console.info("Wrote audio file to ", filePath)
+    console.info("Wrote audio file to", filePath)
 
-def resizeToGrid(spectrogram, gridSize):
+def expandToGrid(spectrogram, gridSize):
     # crop along both axes
-    newY = (spectrogram.shape[1] // gridSize) * gridSize
-    newX = (spectrogram.shape[0] // gridSize) * gridSize
-    newSpectrogram = spectrogram[:newX, :newY]
+    newY = ceil(spectrogram.shape[1] / gridSize) * gridSize
+    newX = ceil(spectrogram.shape[0] / gridSize) * gridSize
+    newSpectrogram = np.zeros((newX, newY))
+    newSpectrogram[:spectrogram.shape[0], :spectrogram.shape[1]] = spectrogram
     return newSpectrogram
 
 # Return a 2d numpy array of the spectrogram
-def audioFileToSpectrogram(audioFile, fftWindowSize=2048, gridSnap=1):
+def audioFileToSpectrogram(audioFile, fftWindowSize):
     spectrogram = librosa.stft(audioFile, fftWindowSize)
     phase = np.imag(spectrogram)
     amplitude = np.log1p(np.abs(spectrogram))
-    if (gridSnap > 1):
-        amplitude = resizeToGrid(amplitude, gridSnap)
     return amplitude, phase
 
 # This is the nutty one
-def spectrogramToAudioFile(spectrogram, fftWindowSize=2048, phaseIterations=10, phase=None):
+def spectrogramToAudioFile(spectrogram, fftWindowSize, phaseIterations=10, phase=None):
     if phase is not None:
         # reconstructing the new complex matrix
         squaredAmplitudeAndSquaredPhase = np.power(spectrogram, 2)
         squaredPhase = np.power(phase, 2)
-        unexpd = np.sqrt(np.max(squaredAmplitudeAndSquaredPhase - squaredPhase,0))
+        unexpd = np.sqrt(np.max(squaredAmplitudeAndSquaredPhase - squaredPhase, 0))
         amplitude = np.expm1(unexpd)
         stftMatrix = amplitude + phase * 1j
         audio = librosa.istft(stftMatrix)
     else:
-        # Phase reconstruction successive approximation wizardry
-        # credit to https://dmitryulyanov.github.io/audio-texture-synthesis-and-style-transfer/
-        # although they do *way* more iterations than you need (10 is fine, 20 would be better, 500 is overkill)
-        amplitude = np.zeros_like(spectrogram)
-        amplitude[:spectrogram.shape[0],:] = np.exp(spectrogram) - 1
-        phase = 2 * np.pi * np.random.random_sample(amplitude.shape) - np.pi
+        # phase reconstruction with successive approximation
+        # credit to https://dsp.stackexchange.com/questions/3406/reconstruction-of-audio-signal-from-its-absolute-spectrogram/3410#3410
+        # for the algorithm used
+        amplitude = np.exp(spectrogram) - 1
         for i in range(phaseIterations):
-            spectrum = amplitude * np.exp(1j*phase)
+            if i == 0:
+                reconstruction = np.random.random_sample(amplitude.shape) + 1j * (2 * np.pi * np.random.random_sample(amplitude.shape) - np.pi)
+            else:
+                reconstruction = librosa.stft(audio, fftWindowSize)
+            spectrum = amplitude * np.exp(1j * np.angle(reconstruction))
             audio = librosa.istft(spectrum)
-            p = np.angle(librosa.stft(audio, fftWindowSize))
     return audio
 
 def loadSpectrogram(filePath):
@@ -105,7 +104,7 @@ def handleImage(fileName, args, phase=None):
     spectrogram, sampleRate = loadSpectrogram(fileName)
     audio = spectrogramToAudioFile(spectrogram, fftWindowSize=args.fft, phaseIterations=args.iter)
 
-    sanityCheck, phase = audioFileToSpectrogram(audio)
+    sanityCheck, phase = audioFileToSpectrogram(audio, fftWindowSize=args.fft)
     saveSpectrogram(sanityCheck, fileName + fileSuffix("Output Spectrogram", fft=args.fft, iter=args.iter, sampleRate=sampleRate) + ".png")
 
     saveAudioFile(audio, fileName + fileSuffix("Output", fft=args.fft, iter=args.iter) + ".wav", sampleRate)

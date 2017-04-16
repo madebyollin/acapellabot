@@ -1,9 +1,14 @@
 """
 Acapella extraction with a CNN
 
-Example usage:
+Typical usage:
     python acapellabot.py song.wav
-    => Writes to <song (acapella).wav>
+    => Extracts acapella from <song.wav> to <song (Acapella Attempt).wav> using default weights
+
+    python acapellabot.py --data input_folder --batch 32 --weights new_model_iteration.h5
+    => Trains a new model based on song/acapella pairs in the folder <input_folder>
+       and saves weights to <new_model_iteration.h5> once complete.
+       See data.py for data specifications.
 """
 
 import conversion
@@ -17,27 +22,22 @@ import numpy as np
 import console
 
 class AcapellaBot:
-    def __init__(self, regularization=0.2):
+    def __init__(self):
         # Create model
-        # pix2pix uses batchnorm before activations, but https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md suggests that having it after is actually better
-        # bias off on everything since I have batchnorm going
-         # Create model
-        # pix2pix uses batchnorm before activations, but https://github.com/ducha-aiki/caffenet-benchmark/blob/master/batchnorm.md suggests that having it after is actually better
-        # bias off on everything since I have batchnorm going
         mashup = Input(shape=(None, None, 1), name='input')
         conv = Conv2D(64, 3, activation='relu', padding='same')(mashup)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = BatchNormalization()(conv)
-        conv = MaxPooling2D((2,2), padding='same')(conv)
+        conv = MaxPooling2D((2, 2), padding='same')(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
-        conv = MaxPooling2D((2,2), padding='same')(conv)
+        conv = MaxPooling2D((2, 2), padding='same')(conv)
         conv = Conv2D(128, 3, activation='relu', padding='same', dilation_rate=1)(conv)
         conv = Conv2D(128, 3, activation='relu', padding='same')(conv)
-        conv = UpSampling2D((2,2))(conv)
+        conv = UpSampling2D((2, 2))(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
-        conv = UpSampling2D((2,2))(conv)
+        conv = UpSampling2D((2, 2))(conv)
         conv = BatchNormalization()(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
@@ -45,15 +45,19 @@ class AcapellaBot:
         conv = Conv2D(1, 3, activation='relu', padding='same')(conv)
         acapella = conv
         m = Model(inputs=mashup, outputs=acapella)
-        console.log("Model has", m.count_params(),"params")
+        console.log("Model has", m.count_params(), "params")
         m.compile(loss='mean_squared_error', optimizer='adam')
         self.model = m
+        # need to know so that we can avoid rounding errors with spectrogram
+        # this should represent how much the input gets downscaled
+        # in the middle of the network
+        self.peakDownscaleFactor = 4
 
-    def train(self, data, epochs, batch=8, snapshots=-1):
+    def train(self, data, epochs, batch=8):
         xTrain, yTrain = data.train()
         xValid, yValid = data.valid()
         while epochs > 0:
-            console.log("Training for ",epochs,"epochs on",len(xTrain),"examples")
+            console.log("Training for", epochs, "epochs on", len(xTrain), "examples")
             self.model.fit(xTrain, yTrain, batch_size=batch, epochs=epochs, validation_data=(xValid, yValid))
             console.notify(str(epochs) + " Epochs Complete!", "Training on", data.inPath, "with size", batch)
             while True:
@@ -75,36 +79,41 @@ class AcapellaBot:
     def loadWeights(self, path):
         self.model.load_weights(path)
     def isolateVocals(self, path, fftWindowSize, phaseIterations=10):
-        console.log("Attempting to isolate vocals from ", path)
+        console.log("Attempting to isolate vocals from", path)
         audio, sampleRate = conversion.loadAudioFile(path)
-        spectrogram, phase = conversion.audioFileToSpectrogram(audio, fftWindowSize=fftWindowSize, gridSnap=256)
-        console.log("Retrieved spectrogram; processing with CNN")
-        newSpectrogram = self.model.predict(spectrogram[np.newaxis,:,:,np.newaxis])[0]
+        spectrogram, phase = conversion.audioFileToSpectrogram(audio, fftWindowSize=fftWindowSize)
+        console.log("Retrieved spectrogram; processing...")
+
+        # newSpectrogram = self.model.predict(conversion.expandToGrid(spectrogram, self.peakDownscaleFactor)[np.newaxis, :, :, np.newaxis])[0][:spectrogram.shape[0], :spectrogram.shape[1]]
+        expandedSpectrogram = conversion.expandToGrid(spectrogram, self.peakDownscaleFactor)
+        expandedSpectrogramWithBatchAndChannels = expandedSpectrogram[np.newaxis, :, :, np.newaxis]
+        predictedSpectrogramWithBatchAndChannels = self.model.predict(expandedSpectrogramWithBatchAndChannels)
+        predictedSpectrogram = predictedSpectrogramWithBatchAndChannels[0, :, :, 0] # o /// o
+        newSpectrogram = predictedSpectrogram[:spectrogram.shape[0], :spectrogram.shape[1]]
         console.log("Processed spectrogram; reconverting to audio")
+
         newAudio = conversion.spectrogramToAudioFile(newSpectrogram, fftWindowSize=fftWindowSize, phaseIterations=phaseIterations)
         pathParts = os.path.split(path)
         fileNameParts = os.path.splitext(pathParts[1])
         outputFileNameBase = os.path.join(pathParts[0], fileNameParts[0] + " (Acapella Attempt)")
         console.log("Converted to audio; writing to", outputFileNameBase)
+
         conversion.saveAudioFile(newAudio, outputFileNameBase + ".wav", sampleRate)
-        sanityCheck, phase = conversion.audioFileToSpectrogram(newAudio, fftWindowSize=fftWindowSize)
-        conversion.saveSpectrogram(newSpectrogram[:,:,0], outputFileNameBase + ".png")
-        conversion.saveSpectrogram(sanityCheck, os.path.join(pathParts[0], fileNameParts[0] + " (Sanity Check)") + ".png")
+        conversion.saveSpectrogram(newSpectrogram, outputFileNameBase + ".png")
         conversion.saveSpectrogram(spectrogram, os.path.join(pathParts[0], fileNameParts[0] + " (Original)") + ".png")
-        console.log("Vocal isolation complete")
+        console.log("Vocal isolation complete 👌")
 
 if __name__ == "__main__":
     # if data folder is specified, create a new data object and train on the data
     # if input audio is specified, infer on the input
-    parser = argparse.ArgumentParser(description="Acapella extraction with a CNN")
+    parser = argparse.ArgumentParser(description="Acapella extraction with a convolutional neural network")
     parser.add_argument("--fft", default=1536, type=int, help="Size of FFT windows")
     parser.add_argument("--data", default=None, type=str, help="Path containing training data")
-    parser.add_argument("--split", default=0.8, type=float, help="Percent of the data to train on.")
+    parser.add_argument("--split", default=0.9, type=float, help="Proportion of the data to train on")
     parser.add_argument("--epochs", default=10, type=int, help="Number of epochs to train.")
-    parser.add_argument("--weights", default="weights.h5", type=str, help="h5 file to read/write weights to.")
+    parser.add_argument("--weights", default="weights.h5", type=str, help="h5 file to read/write weights to")
     parser.add_argument("--batch", default=8, type=int, help="Batch size for training")
     parser.add_argument("--phase", default=10, type=int, help="Phase iterations for reconstruction")
-    parser.add_argument("--snapshots", default=-1, type=int, help="Phase iterations for reconstruction")
     parser.add_argument("--load", action='store_true', help="Load previous weights file before starting")
     parser.add_argument("files", nargs="*", default=[])
 
