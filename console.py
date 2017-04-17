@@ -2,7 +2,8 @@
 Various utilities for pretty console output
 Ported nigh-verbatim from a similar file I use for node
 """
-import time, os
+import os
+import time as sysTime
 
 class colors:
     END = "\033[0m"
@@ -46,10 +47,10 @@ def warn(*args):
 def error(*args):
     print(colors.DK_RED + colors.BLINK + "ERROR:\t" + colors.END + colors.RED, fmt(args), colors.END)
 def time(key):
-    timers[key] = time.time()
+    timers[key] = sysTime.time()
 def timeEnd(key):
     if key in timers:
-        t = time.time() - timers[key]
+        t = sysTime.time() - timers[key]
         print("\t" + str(t) + colors.DIM  + " s \t" + key + colors.END)
         del timers[key]
 def notify(*args):

@@ -9,10 +9,11 @@ e) have the same sample rate
 """
 import sys
 import os
-import conversion
 import numpy as np
 import h5py
+
 import console
+import conversion
 
 # Modify these functions if your data is in a different format
 def keyOfFile(fileName):

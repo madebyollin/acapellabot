@@ -58,9 +58,11 @@ def spectrogramToAudioFile(spectrogram, fftWindowSize, phaseIterations=10, phase
 def loadSpectrogram(filePath):
     fileName = basename(filePath)
     if filePath.index("sampleRate") < 0:
-        console.warn("sample rate not specified")
-    sampleRate = int(fileName[fileName.index("sampleRate=") + 11:fileName.index(").png")])
-    console.info("Sample rate : " + str(sampleRate))
+        console.warn("Sample rate should be specified in file name", filePath)
+        sampleRate == 22050
+    else:
+        sampleRate = int(fileName[fileName.index("sampleRate=") + 11:fileName.index(").png")])
+    console.info("Using sample rate : " + str(sampleRate))
     image = io.imread(filePath, as_grey=True)
     return image / np.max(image), sampleRate
 
@@ -110,7 +112,7 @@ def handleImage(fileName, args, phase=None):
     saveAudioFile(audio, fileName + fileSuffix("Output", fft=args.fft, iter=args.iter) + ".wav", sampleRate)
 
 if __name__ == "__main__":
-    # for experimenting with modifying acapellas in image processors :)
+    # Test code for experimenting with modifying acapellas in image processors (and generally testing the reconstruction pipeline)
     parser = argparse.ArgumentParser(description="Convert image files to audio and audio files to images")
     parser.add_argument("--fft", default=1536, type=int, help="Size of FFT windows")
     parser.add_argument("--iter", default=10, type=int, help="Number of iterations to use for phase reconstruction")

@@ -11,15 +11,18 @@ Typical usage:
        See data.py for data specifications.
 """
 
-import conversion
 import argparse
 import random, string
-from data import Data
-from keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, UpSampling2D, Concatenate, Conv2D, LeakyReLU, Dropout
-from keras.models import Model
 import os
+
 import numpy as np
+from keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, UpSampling2D
+from keras.models import Model
+
 import console
+import conversion
+from data import Data
+
 
 class AcapellaBot:
     def __init__(self):
