@@ -16,7 +16,7 @@ import random, string
 import os
 
 import numpy as np
-from keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, UpSampling2D
+from keras.layers import Input, Conv2D, MaxPooling2D, BatchNormalization, UpSampling2D, Concatenate
 from keras.models import Model
 
 import console
@@ -26,22 +26,27 @@ from data import Data
 
 class AcapellaBot:
     def __init__(self):
-        # Create model
         mashup = Input(shape=(None, None, 1), name='input')
-        conv = Conv2D(64, 3, activation='relu', padding='same')(mashup)
-        conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
+        convA = Conv2D(64, 3, activation='relu', padding='same')(mashup)
+        conv = Conv2D(64, 4, strides=2, activation='relu', padding='same', use_bias=False)(convA)
         conv = BatchNormalization()(conv)
-        conv = MaxPooling2D((2, 2), padding='same')(conv)
-        conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
-        conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
-        conv = MaxPooling2D((2, 2), padding='same')(conv)
-        conv = Conv2D(128, 3, activation='relu', padding='same', dilation_rate=1)(conv)
+
+        convB = Conv2D(64, 3, activation='relu', padding='same')(conv)
+        conv = Conv2D(64, 4, strides=2, activation='relu', padding='same', use_bias=False)(convB)
+        conv = BatchNormalization()(conv)
+
         conv = Conv2D(128, 3, activation='relu', padding='same')(conv)
-        conv = UpSampling2D((2, 2))(conv)
-        conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
-        conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
-        conv = UpSampling2D((2, 2))(conv)
+        conv = Conv2D(128, 3, activation='relu', padding='same', use_bias=False)(conv)
         conv = BatchNormalization()(conv)
+        conv = UpSampling2D((2, 2))(conv)
+
+        conv = Concatenate()([conv, convB])
+        conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
+        conv = Conv2D(64, 3, activation='relu', padding='same', use_bias=False)(conv)
+        conv = BatchNormalization()(conv)
+        conv = UpSampling2D((2, 2))(conv)
+
+        conv = Concatenate()([conv, convA])
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = Conv2D(64, 3, activation='relu', padding='same')(conv)
         conv = Conv2D(32, 3, activation='relu', padding='same')(conv)
@@ -98,12 +103,12 @@ class AcapellaBot:
         newAudio = conversion.spectrogramToAudioFile(newSpectrogram, fftWindowSize=fftWindowSize, phaseIterations=phaseIterations)
         pathParts = os.path.split(path)
         fileNameParts = os.path.splitext(pathParts[1])
-        outputFileNameBase = os.path.join(pathParts[0], fileNameParts[0] + " (Acapella Attempt)")
+        outputFileNameBase = os.path.join(pathParts[0], fileNameParts[0] + "_acapella")
         console.log("Converted to audio; writing to", outputFileNameBase)
 
         conversion.saveAudioFile(newAudio, outputFileNameBase + ".wav", sampleRate)
         conversion.saveSpectrogram(newSpectrogram, outputFileNameBase + ".png")
-        conversion.saveSpectrogram(spectrogram, os.path.join(pathParts[0], fileNameParts[0] + " (Original)") + ".png")
+        conversion.saveSpectrogram(spectrogram, os.path.join(pathParts[0], fileNameParts[0]) + ".png")
         console.log("Vocal isolation complete 👌")
 
 if __name__ == "__main__":
