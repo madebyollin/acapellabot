@@ -1,5 +1,12 @@
 # AcapellaBot
-Isolating vocals from music with a Convolutional Neural Network.  Blog post is [here](http://www.madebyollin.com/posts/cnn_acapella_extraction/).
+
+**Update [2020-05-20]:** For better, modern acapella extraction / source separation, I would recommend [Demucs](https://github.com/facebookresearch/demucs), [Spleeter](https://github.com/deezer/spleeter), or PhonicMind (commercial product). This project worked reasonably well when I wrote it in 2017, but the current state of the art is much better :)
+
+Original README continues below.
+
+---
+
+Isolating vocals from music with a Convolutional Neural Network. Blog post is [here](http://www.madebyollin.com/posts/cnn_acapella_extraction/).
 
 ![](https://raw.githubusercontent.com/madebyollin/madebyollin/master/posts/cnn_acapella_extraction/output2.gif)
 
